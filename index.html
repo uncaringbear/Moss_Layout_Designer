@@ -1,0 +1,451 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MOSS Layout Designer</title>
+<style>
+:root{--bg:#14161a;--panel:#1d2127;--panel2:#232830;--line:#333a44;--text:#e8eaed;--dim:#9aa3ad;--accent:#4f8cff}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header h1{font-size:15px;margin:0 10px 0 0;font-weight:600}
+header .group{display:flex;gap:6px;align-items:center;padding:0 10px;border-left:1px solid var(--line)}
+button,select,input,textarea{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:5px 9px;font-size:12.5px;font-family:inherit}
+button{cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.danger{color:#ff8484}
+input[type=number]{width:66px}
+label{font-size:11.5px;color:var(--dim)}
+main{flex:1;display:flex;min-height:0}
+#canvasWrap{flex:1;position:relative;overflow:auto;display:flex;align-items:center;justify-content:center;background:#0d0f12;padding:24px}
+#status{position:absolute;left:12px;bottom:8px;font-size:11px;color:#7d858e}
+canvas#cv{background:#f5f2ea;display:block;touch-action:none;cursor:crosshair}
+#sidebar{width:340px;flex:none;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.tabs{display:flex;border-bottom:1px solid var(--line)}
+.tabs button{flex:1;border:none;border-radius:0;background:transparent;padding:9px 4px;color:var(--dim);border-bottom:2px solid transparent}
+.tabs button.active{color:var(--text);border-bottom-color:var(--accent)}
+.tabpage{display:none;flex:1;overflow:auto;padding:12px}
+.tabpage.active{display:block}
+.field{margin-bottom:10px}
+.field>label{display:block;margin-bottom:4px}
+textarea{width:100%;resize:vertical;min-height:52px}
+pre#json{background:#0d0f12;border:1px solid var(--line);border-radius:6px;padding:10px;font-size:11.5px;overflow:auto;white-space:pre-wrap;word-break:break-word;max-height:420px}
+.msgs{font-size:11.5px;line-height:1.5;margin-top:8px}
+.msgs .warn{color:#ffc46b}
+.msgs .err{color:#ff8484}
+.msgs .ok{color:#7fd8a4}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.boxlist{display:flex;flex-direction:column;gap:4px;margin-top:4px}
+.boxitem{display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;cursor:pointer;font-size:12px}
+.boxitem.sel{border-color:var(--accent);background:#22304a}
+.boxitem .dot{width:10px;height:10px;border-radius:3px;flex:none}
+.boxitem .grow{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hint{font-size:11px;color:var(--dim);line-height:1.5}
+</style>
+</head>
+<body>
+<header>
+<h1>MOSS Layout Designer</h1>
+<div class="group">
+<label>Canvas</label>
+<select id="preset"></select>
+<input id="cw" type="number" step="16" min="16"> x
+<input id="ch" type="number" step="16" min="16">
+<button id="applySize">Apply</button>
+</div>
+<div class="group">
+<button id="addBox" title="Add a box in the center">+ Box</button>
+<button id="dupBox" title="Ctrl+D">Duplicate</button>
+<button id="fwdBox" title="Bring forward">Forward</button>
+<button id="backBox" title="Send backward">Back</button>
+<button id="delBox" class="danger" title="Del">Delete</button>
+<button id="undo" title="Ctrl+Z">Undo</button>
+</div>
+<div class="group">
+<label><input type="checkbox" id="snap" checked> Snap 16</label>
+<button id="loadRef">Ref image</button>
+<button id="clearRef">Clear ref</button>
+</div>
+<div class="group">
+<button id="saveProj" class="primary">Save project</button>
+<button id="loadProj">Load / import</button>
+</div>
+<input type="file" id="fileImg" accept=".png,.jpg,.jpeg,.webp" style="display:none">
+<input type="file" id="fileJson" accept=".json" style="display:none">
+</header>
+<main>
+<div id="canvasWrap"><canvas id="cv" width="1024" height="1024"></canvas><div id="status"></div></div>
+<div id="sidebar">
+<div class="tabs">
+<button data-tab="insp" class="active">Inspector</button>
+<button data-tab="scene">Scene</button>
+<button data-tab="json">JSON</button>
+</div>
+<div class="tabpage active" id="tab-insp">
+<div class="field"><label>Label (category)</label><select id="fLabel"><option value="text">text</option><option value="object">object</option></select></div>
+<div class="field"><label>Caption (item description)</label><textarea id="fCaption" rows="2"></textarea></div>
+<div class="field" id="fTextWrap"><label>Text to render (use line breaks to control lines)</label><textarea id="fText" rows="3"></textarea></div>
+<div class="field row">
+<span><label>X</label><br><input id="fX" type="number" step="16"></span>
+<span><label>Y</label><br><input id="fY" type="number" step="16"></span>
+<span><label>W</label><br><input id="fW" type="number" step="16"></span>
+<span><label>H</label><br><input id="fH" type="number" step="16"></span>
+</div>
+<div class="field"><label>Bounding box (abs_centralized yxyx)</label><div id="fBbox" class="hint"></div></div>
+<div class="field"><label>Boxes (top of list = front)</label><div id="boxList" class="boxlist"></div></div>
+<div class="hint" style="margin-top:10px">Drag on empty canvas to create a box. Drag a box to move it; corner/edge handles to resize. Arrow keys nudge (Shift = 16px). Del removes. Ctrl+Z undo, Ctrl+D duplicate.</div>
+</div>
+<div class="tabpage" id="tab-scene">
+<div class="field"><label>summary.caption (overall scene)</label><textarea id="gCaption" rows="4"></textarea></div>
+<div class="field"><label>summary.meta (comma separated)</label><input id="gMeta" style="width:100%"></div>
+<div class="field"><label>Extra natural-language prompt (optional; prepended before the JSON)</label><textarea id="gExtra" rows="3"></textarea></div>
+<div class="field"><label>Negative prompt (project-only; pass it as a separate field in ComfyUI, not inside the layout JSON)</label><textarea id="gNeg" rows="2"></textarea></div>
+</div>
+<div class="tabpage" id="tab-json">
+<div class="row" style="margin-bottom:8px">
+<button id="copyJson" class="primary">Copy JSON</button>
+<button id="copyFull" title="Extra prompt + JSON">Copy with prompt</button>
+<button id="dlJson">Download .json</button>
+</div>
+<pre id="json"></pre>
+<div class="msgs" id="msgs"></div>
+</div>
+</div>
+</main>
+<script>
+"use strict";
+// ---------- state ----------
+const state = {
+  canvas: { w: 1024, h: 1024 },
+  meta: "poster",
+  summaryCaption: "",
+  extraPrompt: "",
+  negativePrompt: "",
+  boxes: [],
+  selected: null,
+  snap: true,
+  refImg: null
+};
+const PRESETS = [
+  ["1024 x 1024  (~1M)", 1024, 1024],
+  ["896 x 1152  (~1M portrait)", 896, 1152],
+  ["1216 x 832  (~1M landscape)", 1216, 832],
+  ["1152 x 1344  (~1.5M portrait)", 1152, 1344],
+  ["1344 x 1152  (~1.5M landscape)", 1344, 1152],
+  ["1344 x 1536  (~2M portrait)", 1344, 1536],
+  ["1536 x 1344  (~2M landscape)", 1536, 1344]
+];
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d");
+let scale = 1, mode = null, dragStart = null, origBox = null, tempBox = null, changed = false, undoStack = [];
+function uid(){ return "b" + Math.random().toString(36).slice(2, 9); }
+function clamp(v, lo, hi){ return Math.min(hi, Math.max(lo, v)); }
+function snapV(v){ const s = state.snap ? 16 : 1; return Math.round(v / s) * s; }
+function sel(){ return state.boxes.find(b => b.id === state.selected) || null; }
+function pushUndo(){ undoStack.push(JSON.stringify({ c: state.canvas, b: state.boxes })); if (undoStack.length > 60) undoStack.shift(); }
+function popUndo(){ const s = undoStack.pop(); if (!s) return; const d = JSON.parse(s); state.canvas = d.c; state.boxes = d.b; if (!state.boxes.find(b => b.id === state.selected)) state.selected = null; syncSizeInputs(); fitScale(); redraw(); refreshAll(); }
+function fitScale(){ const wrap = $("canvasWrap"); const pad = 56; scale = Math.min((wrap.clientWidth - pad) / state.canvas.w, (wrap.clientHeight - pad) / state.canvas.h, 1); scale = Math.max(scale, 0.05); cv.width = Math.round(state.canvas.w * scale); cv.height = Math.round(state.canvas.h * scale); redraw(); }
+function colorFor(b){ return b.label === "text" ? "#c98a1b" : "#2f9e6e"; }
+function redraw(){
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  if (state.refImg) ctx.drawImage(state.refImg, 0, 0, state.canvas.w, state.canvas.h);
+  else { ctx.fillStyle = "#f5f2ea"; ctx.fillRect(0, 0, state.canvas.w, state.canvas.h); }
+  ctx.strokeStyle = "rgba(0,0,0,0.06)"; ctx.lineWidth = 1; ctx.beginPath();
+  for (let x = 0; x <= state.canvas.w; x += 128){ ctx.moveTo(x, 0); ctx.lineTo(x, state.canvas.h); }
+  for (let y = 0; y <= state.canvas.h; y += 128){ ctx.moveTo(0, y); ctx.lineTo(state.canvas.w, y); }
+  ctx.stroke();
+  const cx = state.canvas.w / 2, cy = state.canvas.h / 2;
+  ctx.strokeStyle = "rgba(80,100,255,0.45)"; ctx.setLineDash([6, 4]); ctx.beginPath();
+  ctx.moveTo(cx, 0); ctx.lineTo(cx, state.canvas.h); ctx.moveTo(0, cy); ctx.lineTo(state.canvas.w, cy); ctx.stroke(); ctx.setLineDash([]);
+  for (const b of state.boxes) drawBox(b, b.id === state.selected);
+}
+function drawBox(b, isSel){
+  const col = colorFor(b);
+  ctx.fillStyle = col + "22"; ctx.fillRect(b.x, b.y, b.w, b.h);
+  ctx.strokeStyle = col; ctx.lineWidth = isSel ? 3 : 2; ctx.strokeRect(b.x, b.y, b.w, b.h);
+  const t = b.label === "text" && b.text ? b.text.split("\n")[0] : b.caption;
+  ctx.font = "600 14px 'Segoe UI', sans-serif";
+  const tw = Math.min(ctx.measureText(t).width + 12, 320);
+  ctx.fillStyle = col; ctx.fillRect(b.x, b.y - 18, tw, 18);
+  ctx.fillStyle = "#fff"; ctx.textBaseline = "middle"; ctx.fillText(t, b.x + 6, b.y - 9);
+  if (isSel){
+    ctx.setLineDash([4, 4]); ctx.strokeStyle = "#1f6fff"; ctx.lineWidth = 1;
+    ctx.strokeRect(b.x - 3, b.y - 3, b.w + 6, b.h + 6); ctx.setLineDash([]);
+    ctx.fillStyle = "#1f6fff";
+    for (const h of handleRects(b)) ctx.fillRect(h.x - 4, h.y - 4, 8, 8);
+  }
+}
+const HANDLES = [["nw", 0, 0], ["n", 0.5, 0], ["ne", 1, 0], ["w", 0, 0.5], ["e", 1, 0.5], ["sw", 0, 1], ["s", 0.5, 1], ["se", 1, 1]];
+function handleRects(b){ return HANDLES.map(h => ({ n: h[0], x: b.x + b.w * h[1], y: b.y + b.h * h[2] })); }
+function hitTest(mx, my){
+  const s = sel();
+  if (s){ for (const h of handleRects(s)){ if (Math.abs(mx - h.x) <= 7 && Math.abs(my - h.y) <= 7) return { type: "resize", h: h.n, box: s }; } }
+  for (let i = state.boxes.length - 1; i >= 0; i--){ const b = state.boxes[i]; if (mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h) return { type: "move", box: b }; }
+  return { type: "empty" };
+}
+// ---------- interaction ----------
+const CURSORS = { nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize", n: "ns-resize", s: "ns-resize", w: "ew-resize", e: "ew-resize" };
+function toCanvas(e){ const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) / scale, y: (e.clientY - r.top) / scale }; }
+cv.addEventListener("pointerdown", e => {
+  if (e.button !== 0) return;
+  const p = toCanvas(e); const hit = hitTest(p.x, p.y);
+  dragStart = p; changed = false;
+  if (hit.type === "resize"){ mode = "resize"; origBox = Object.assign({}, sel(), { hname: hit.h }); }
+  else if (hit.type === "move"){ mode = "move"; origBox = Object.assign({}, hit.box); state.selected = hit.box.id; }
+  else { mode = "new"; tempBox = null; state.selected = null; }
+  cv.setPointerCapture(e.pointerId); redraw(); refreshAll();
+});
+cv.addEventListener("pointermove", e => {
+  const p = toCanvas(e);
+  $("status").textContent = "x " + Math.round(p.x - state.canvas.w / 2) + ", y " + Math.round(p.y - state.canvas.h / 2) + "   (abs_centralized)";
+  if (!mode){
+    const hit = hitTest(p.x, p.y);
+    cv.style.cursor = hit.type === "resize" ? CURSORS[hit.h] : (hit.type === "move" ? "move" : "crosshair");
+    return;
+  }
+  const s = sel();
+  if (mode === "new"){
+    const w = Math.abs(p.x - dragStart.x), h = Math.abs(p.y - dragStart.y);
+    if (w < 4 && h < 4) return;
+    if (!tempBox){ pushUndo(); tempBox = { id: uid(), label: "object", caption: "", text: "", x: 0, y: 0, w: 16, h: 16 }; state.boxes.push(tempBox); state.selected = tempBox.id; }
+    tempBox.x = clamp(snapV(Math.min(dragStart.x, p.x)), 0, state.canvas.w - 16);
+    tempBox.y = clamp(snapV(Math.min(dragStart.y, p.y)), 0, state.canvas.h - 16);
+    tempBox.w = clamp(snapV(w), 16, state.canvas.w - tempBox.x);
+    tempBox.h = clamp(snapV(h), 16, state.canvas.h - tempBox.y);
+  } else if (s){
+    if (!changed){ pushUndo(); changed = true; }
+    if (mode === "move"){
+      s.x = clamp(snapV(origBox.x + p.x - dragStart.x), 0, state.canvas.w - s.w);
+      s.y = clamp(snapV(origBox.y + p.y - dragStart.y), 0, state.canvas.h - s.h);
+    } else if (mode === "resize"){
+      resizeBox(s, origBox, p);
+    }
+  }
+  redraw(); refreshAll();
+});
+cv.addEventListener("pointerup", () => { mode = null; tempBox = null; redraw(); refreshAll(); });
+function resizeBox(b, o, p){
+  let x1 = o.x, y1 = o.y, x2 = o.x + o.w, y2 = o.y + o.h;
+  const n = o.hname;
+  if (n.includes("w")) x1 = clamp(snapV(o.x + p.x - dragStart.x), 0, x2 - 16);
+  if (n.includes("e")) x2 = clamp(snapV(o.x + o.w + p.x - dragStart.x), x1 + 16, state.canvas.w);
+  if (n.includes("n")) y1 = clamp(snapV(o.y + p.y - dragStart.y), 0, y2 - 16);
+  if (n.includes("s")) y2 = clamp(snapV(o.y + o.h + p.y - dragStart.y), y1 + 16, state.canvas.h);
+  b.x = x1; b.y = y1; b.w = x2 - x1; b.h = y2 - y1;
+}
+window.addEventListener("keydown", e => {
+  if (e.target.matches && e.target.matches("input,textarea,select")) return;
+  const s = sel();
+  if (e.key === "Delete" || e.key === "Backspace"){
+    if (s){ pushUndo(); state.boxes = state.boxes.filter(b => b !== s); state.selected = null; }
+  } else if (e.key.startsWith("Arrow")){
+    if (s){ pushUndo(); const d = e.shiftKey ? 16 : 1;
+      if (e.key === "ArrowLeft") s.x = clamp(s.x - d, 0, state.canvas.w - s.w);
+      if (e.key === "ArrowRight") s.x = clamp(s.x + d, 0, state.canvas.w - s.w);
+      if (e.key === "ArrowUp") s.y = clamp(s.y - d, 0, state.canvas.h - s.h);
+      if (e.key === "ArrowDown") s.y = clamp(s.y + d, 0, state.canvas.h - s.h);
+    }
+  } else if (e.ctrlKey && (e.key === "z" || e.key === "Z")){ popUndo(); e.preventDefault(); return; }
+  else if (e.ctrlKey && (e.key === "d" || e.key === "D")){ duplicate(); e.preventDefault(); }
+  else if (e.key === "Escape"){ state.selected = null; }
+  else return;
+  e.preventDefault(); redraw(); refreshAll();
+});
+function duplicate(){ const s = sel(); if (!s) return; pushUndo(); const c = Object.assign({}, s, { id: uid(), x: clamp(s.x + 16, 0, state.canvas.w - s.w), y: clamp(s.y + 16, 0, state.canvas.h - s.h) }); state.boxes.push(c); state.selected = c.id; }
+function moveLayer(dir){ const s = sel(); if (!s) return; const i = state.boxes.indexOf(s); const j = clamp(i + dir, 0, state.boxes.length - 1); if (i === j) return; pushUndo(); state.boxes.splice(i, 1); state.boxes.splice(j, 0, s); }
+// ---------- toolbar ----------
+$("addBox").onclick = () => { pushUndo(); const b = { id: uid(), label: "object", caption: "", text: "", x: Math.round((state.canvas.w - 384) / 2), y: Math.round((state.canvas.h - 256) / 2), w: 384, h: 256 }; state.boxes.push(b); state.selected = b.id; redraw(); refreshAll(); switchTab("insp"); };
+$("dupBox").onclick = () => { duplicate(); redraw(); refreshAll(); };
+$("fwdBox").onclick = () => { moveLayer(1); redraw(); refreshAll(); };
+$("backBox").onclick = () => { moveLayer(-1); redraw(); refreshAll(); };
+$("delBox").onclick = () => { const s = sel(); if (!s) return; pushUndo(); state.boxes = state.boxes.filter(b => b !== s); state.selected = null; redraw(); refreshAll(); };
+$("undo").onclick = popUndo;
+$("snap").onchange = e => { state.snap = e.target.checked; };
+$("loadRef").onclick = () => $("fileImg").click();
+$("clearRef").onclick = () => { state.refImg = null; redraw(); };
+$("saveProj").onclick = () => download("moss_layout_project_" + stamp() + ".json", projectJSON());
+$("loadProj").onclick = () => $("fileJson").click();
+$("applySize").onclick = applySize;
+$("fileImg").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  const img = new Image();
+  img.onload = () => { state.refImg = img; redraw(); };
+  img.src = URL.createObjectURL(f); e.target.value = "";
+});
+// ---------- inspector ----------
+function escapeHtml(s){ return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+let inspSnapshotDone = false;
+function refreshAll(){
+  const s = sel(); const ae = document.activeElement; const skip = id => ae && ae.id === id;
+  $("fTextWrap").style.display = (s && s.label === "text") ? "" : "none";
+  if (s){
+    if (!skip("fLabel")) $("fLabel").value = s.label;
+    if (!skip("fCaption")) $("fCaption").value = s.caption || "";
+    if (!skip("fText")) $("fText").value = s.text || "";
+    if (!skip("fX")) $("fX").value = Math.round(s.x);
+    if (!skip("fY")) $("fY").value = Math.round(s.y);
+    if (!skip("fW")) $("fW").value = Math.round(s.w);
+    if (!skip("fH")) $("fH").value = Math.round(s.h);
+    const hw = state.canvas.w, hh = state.canvas.h;
+    $("fBbox").textContent = JSON.stringify([Math.round(s.y - hh / 2), Math.round(s.x - hw / 2), Math.round(s.y + s.h - hh / 2), Math.round(s.x + s.w - hw / 2)]);
+  } else {
+    for (const id of ["fCaption", "fText", "fX", "fY", "fW", "fH"]) $(id).value = "";
+    $("fBbox").textContent = "No box selected - draw on the canvas or click a box.";
+  }
+  const list = $("boxList"); list.innerHTML = "";
+  state.boxes.forEach((b, i) => {
+    const d = document.createElement("div");
+    d.className = "boxitem" + (b.id === state.selected ? " sel" : "");
+    const name = (b.label === "text" && b.text) ? b.text : (b.caption || "(untitled)");
+    d.innerHTML = '<span class="dot" style="background:' + colorFor(b) + '"></span><span class="grow">' + escapeHtml(name) + '</span><span class="hint">#' + (i + 1) + " " + b.label + "</span>";
+    d.onclick = () => { state.selected = b.id; redraw(); refreshAll(); };
+    list.appendChild(d);
+  });
+  if (!skip("gCaption")) $("gCaption").value = state.summaryCaption;
+  if (!skip("gMeta")) $("gMeta").value = state.meta;
+  if (!skip("gExtra")) $("gExtra").value = state.extraPrompt;
+  if (!skip("gNeg")) $("gNeg").value = state.negativePrompt;
+  updateJSON();
+}
+function inspEdit(){
+  if (!inspSnapshotDone){ pushUndo(); inspSnapshotDone = true; }
+  const s = sel(); if (!s) return;
+  s.label = $("fLabel").value; s.caption = $("fCaption").value; s.text = $("fText").value;
+  s.x = clamp(snapV(+$("fX").value || 0), 0, state.canvas.w - s.w);
+  s.y = clamp(snapV(+$("fY").value || 0), 0, state.canvas.h - s.h);
+  s.w = clamp(snapV(+$("fW").value || 16), 16, state.canvas.w - s.x);
+  s.h = clamp(snapV(+$("fH").value || 16), 16, state.canvas.h - s.y);
+  redraw(); refreshAll();
+}
+for (const id of ["fLabel", "fCaption", "fText", "fX", "fY", "fW", "fH"]){
+  $(id).addEventListener("focus", () => { inspSnapshotDone = false; });
+  $(id).addEventListener("input", inspEdit);
+  $(id).addEventListener("change", () => { inspSnapshotDone = false; inspEdit(); });
+}
+for (const [id, key] of [["gCaption", "summaryCaption"], ["gMeta", "meta"], ["gExtra", "extraPrompt"], ["gNeg", "negativePrompt"]]){
+  $(id).addEventListener("input", () => { state[key] = $(id).value; updateJSON(); });
+}
+// ---------- export / validation ----------
+function layoutJSON(){
+  const hw = state.canvas.w, hh = state.canvas.h;
+  const items = state.boxes.map(b => {
+    const it = { label: b.label, caption: b.caption || "", bbox: [Math.round(b.y - hh / 2), Math.round(b.x - hw / 2), Math.round(b.y + b.h - hh / 2), Math.round(b.x + b.w - hw / 2)] };
+    if (b.label === "text") it.text = b.text || "";
+    return it;
+  });
+  return {
+    summary: { meta: state.meta.split(",").map(x => x.trim()).filter(Boolean), canvas: "single", caption: state.summaryCaption || "" },
+    items: items,
+    bbox_coord_space: "abs_centralized",
+    bbox_format: "yxyx"
+  };
+}
+function overlaps(){
+  const out = [];
+  for (let i = 0; i < state.boxes.length; i++) for (let j = i + 1; j < state.boxes.length; j++){
+    const a = state.boxes[i], b = state.boxes[j];
+    const ix = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+    const iy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+    if (ix > 0 && iy > 0) out.push("#" + (i + 1) + " x #" + (j + 1));
+  }
+  return out;
+}
+function updateJSON(){
+  const j = layoutJSON();
+  $("json").textContent = JSON.stringify(j, null, 2);
+  const m = []; const w = state.canvas.w, h = state.canvas.h;
+  if (w % 16 || h % 16) m.push(["err", "Canvas dimensions must be multiples of 16."]);
+  if (!j.items.length) m.push(["err", "No boxes defined yet - draw at least one box."]);
+  if (!j.summary.caption) m.push(["warn", "summary.caption is empty - the model uses it to describe the overall scene."]);
+  for (const b of state.boxes){
+    const name = (b.label === "text" && b.text) ? b.text : (b.caption || b.id);
+    if (b.x < 0 || b.y < 0 || b.x + b.w > w || b.y + b.h > h) m.push(["err", "Box out of canvas bounds: " + name]);
+    if (b.label === "text" && !(b.text || "").trim()) m.push(["warn", "Text box has empty text: " + name]);
+    if (!(b.caption || "").trim()) m.push(["warn", "Box caption is empty: " + name]);
+  }
+  const ov = overlaps();
+  if (ov.length) m.push(["warn", ov.length + " box overlap(s) detected (allowed, but check intent): " + ov.join("; ")]);
+  if (!m.length) m.push(["ok", "Layout looks valid. Copy the JSON and send it to ComfyUI."]);
+  $("msgs").innerHTML = m.map(x => '<div class="' + x[0] + '">' + escapeHtml(x[1]) + "</div>").join("");
+}
+// ---------- save / load / import ----------
+function download(name, text){ const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "application/json" })); a.download = name; a.click(); }
+function stamp(){ const d = new Date(); const p = n => String(n).padStart(2, "0"); return "" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "_" + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()); }
+function projectJSON(){ return JSON.stringify({ app: "moss-layout-designer", version: 1, canvas: state.canvas, meta: state.meta, summaryCaption: state.summaryCaption, extraPrompt: state.extraPrompt, negativePrompt: state.negativePrompt, boxes: state.boxes }, null, 2); }
+function loadProject(o){
+  pushUndo();
+  state.canvas = { w: clamp(o.canvas.w, 16, 16384), h: clamp(o.canvas.h, 16, 16384) };
+  state.meta = o.meta || ""; state.summaryCaption = o.summaryCaption || "";
+  state.extraPrompt = o.extraPrompt || ""; state.negativePrompt = o.negativePrompt || "";
+  state.boxes = (o.boxes || []).map(b => ({ id: b.id || uid(), label: b.label === "text" ? "text" : "object", caption: b.caption || "", text: b.text || "", x: +b.x || 0, y: +b.y || 0, w: +b.w || 16, h: +b.h || 16 }));
+  state.selected = null; syncSizeInputs(); fitScale(); refreshAll();
+}
+function importLayout(obj){
+  pushUndo();
+  const w = state.canvas.w, h = state.canvas.h;
+  const sm = obj.summary || {};
+  state.meta = (sm.meta || []).join(", "); state.summaryCaption = sm.caption || "";
+  state.boxes = (obj.items || []).map(it => {
+    const bb = it.bbox || [0, 0, 0, 0];
+    return { id: uid(), label: it.label === "text" ? "text" : "object", caption: it.caption || "", text: it.text || "", x: Math.round(bb[1] + w / 2), y: Math.round(bb[0] + h / 2), w: Math.round(bb[3] - bb[1]), h: Math.round(bb[2] - bb[0]) };
+  });
+  for (const b of state.boxes){ b.x = clamp(b.x, 0, state.canvas.w - 16); b.y = clamp(b.y, 0, state.canvas.h - 16); b.w = clamp(b.w, 16, state.canvas.w - b.x); b.h = clamp(b.h, 16, state.canvas.h - b.y); }
+  state.selected = null; fitScale(); refreshAll(); switchTab("insp");
+}
+$("fileJson").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const o = JSON.parse(r.result);
+      if (o && o.items && o.bbox_coord_space === "abs_centralized") importLayout(o);
+      else if (o && o.app === "moss-layout-designer") loadProject(o);
+      else alert("Unrecognized JSON - expected a project file or a MOSS layout (items + bbox_coord_space).");
+    } catch (err) { alert("Could not parse JSON: " + err.message); }
+  };
+  r.readAsText(f); e.target.value = "";
+});
+$("copyJson").onclick = () => copyText(JSON.stringify(layoutJSON(), null, 2));
+$("copyFull").onclick = () => copyText((state.extraPrompt ? state.extraPrompt + "\n" : "") + JSON.stringify(layoutJSON(), null, 2));
+$("dlJson").onclick = () => download("moss_layout_" + stamp() + ".json", JSON.stringify(layoutJSON(), null, 2));
+function copyText(t){ navigator.clipboard.writeText(t).then(() => flash("Copied to clipboard."), () => flash("Clipboard blocked - select from the JSON panel manually.")); }
+function flash(msg){ const d = document.createElement("div"); d.className = "ok"; d.textContent = msg; $("msgs").prepend(d); setTimeout(() => d.remove(), 2500); }
+// ---------- presets / size ----------
+function buildPresets(){
+  const sel = $("preset");
+  PRESETS.forEach(pr => { const o = document.createElement("option"); o.value = pr[1] + "x" + pr[2]; o.textContent = pr[0]; sel.appendChild(o); });
+  sel.onchange = () => { const parts = sel.value.split("x"); $("cw").value = parts[0]; $("ch").value = parts[1]; applySize(); };
+  syncSizeInputs();
+}
+function syncSizeInputs(){ $("cw").value = state.canvas.w; $("ch").value = state.canvas.h; $("preset").value = state.canvas.w + "x" + state.canvas.h; }
+function applySize(){
+  const q = v => clamp(Math.round((+v || 1024) / 16) * 16, 16, 16384);
+  pushUndo();
+  state.canvas = { w: q($("cw").value), h: q($("ch").value) };
+  for (const b of state.boxes){ b.x = clamp(b.x, 0, state.canvas.w - 16); b.y = clamp(b.y, 0, state.canvas.h - 16); b.w = clamp(b.w, 16, state.canvas.w - b.x); b.h = clamp(b.h, 16, state.canvas.h - b.y); }
+  syncSizeInputs(); fitScale(); refreshAll();
+}
+// ---------- tabs / init ----------
+function switchTab(name){
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tabpage").forEach(p => p.classList.toggle("active", p.id === "tab-" + name));
+}
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => switchTab(b.dataset.tab));
+function demoBoxes(){
+  return [
+    { id: uid(), label: "text", caption: "Large dark-blue uppercase title centered at the top.", text: "EXPLORE", x: 128, y: 96, w: 768, h: 128 },
+    { id: uid(), label: "object", caption: "A flat blue mountain illustration in the lower center.", text: "", x: 224, y: 320, w: 576, h: 576 }
+  ];
+}
+buildPresets();
+state.summaryCaption = "A minimalist travel poster with a cream background, a blue mountain illustration, and the title EXPLORE at the top.";
+state.boxes = demoBoxes();
+window.addEventListener("resize", fitScale);
+fitScale(); refreshAll(); switchTab("insp");
+</script>
+</body>
+</html>
+
